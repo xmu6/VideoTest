@@ -1,0 +1,7 @@
+node_modules/
+out/
+.chrome-profile/
+*.log
+
+# 临时截图
+Snipaste_*.png

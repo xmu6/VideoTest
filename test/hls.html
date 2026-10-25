@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>VT HLS test — 真实 HLS 播放</title>
+<style>
+  body{margin:0;background:#0b0f17;color:#cfd8e3;font:13px/1.5 "Segoe UI",system-ui,"Microsoft YaHei",sans-serif}
+  header{padding:10px 16px;border-bottom:1px solid #1f2a3a}
+  header b{color:#22c55e}
+  #log{color:#f59e0b;font-variant-numeric:tabular-nums}
+  .wrap{padding:12px;max-width:960px}
+  video{width:100%;background:#000;border:1px solid #1f2a3a;border-radius:8px;aspect-ratio:16/9}
+</style>
+</head>
+<body>
+<header><b>VT HLS test</b> <span id="log">初始化…</span></header>
+<div class="wrap"><video id="v" aria-label="HLS test stream" muted autoplay playsinline controls></video></div>
+<script src="/hls.js"></script>
+<script>
+const q = new URLSearchParams(location.search);
+const src = q.get('src') || 'https://test-streams.mux.dev/x36xhzz/x36xhzz.m3u8';
+const v = document.getElementById('v');
+const log = document.getElementById('log');
+const say = (m) => { log.textContent = m; };
+
+if (window.Hls && Hls.isSupported()) {
+  const hls = window.hls = new Hls({ enableWorker: true, lowLatencyMode: false });
+  hls.loadSource(src);
+  hls.attachMedia(v);
+  hls.on(Hls.Events.MANIFEST_PARSED, (_e, d) => say(`manifest ok: ${d.levels.length} 档码率`));
+  hls.on(Hls.Events.LEVEL_SWITCHED, (_e, d) => say(`当前码率档位 ${d.level} / ${hls.levels[d.level]?.height || '?'}p`));
+  hls.on(Hls.Events.ERROR, (_e, d) => say(`HLS error: ${d.type}/${d.details}${d.fatal ? ' (fatal)' : ''}`));
+  v.play().catch((e) => say('play() 被拒: ' + e.message));
+} else if (v.canPlayType('application/vnd.apple.mpegurl')) {
+  v.src = src;
+  v.play().catch(() => {});
+} else {
+  say('当前浏览器不支持 HLS');
+}
+</script>
+</body>
+</html>

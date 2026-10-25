@@ -1,0 +1,10 @@
+import { chromium } from 'playwright-core';
+const target = process.argv[2];
+const out = process.argv[3];
+const b = await chromium.launch({ executablePath: 'C:/Program Files/Google/Chrome/Application/chrome.exe', headless: true });
+const p = await b.newPage({ viewport: { width: 1280, height: 1000 } });
+await p.goto('file:///' + target.replace(/\\/g, '/'));
+await p.waitForTimeout(600);
+await p.screenshot({ path: out, fullPage: true });
+await b.close();
+console.log('screenshot ->', out);

@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>VT fixture — 故障注入测试页</title>
+<style>
+  body{margin:0;background:#0b0f17;color:#cfd8e3;font:13px/1.5 "Segoe UI",system-ui,"Microsoft YaHei",sans-serif}
+  header{padding:10px 16px;border-bottom:1px solid #1f2a3a;display:flex;gap:18px;align-items:center}
+  header b{color:#22c55e}
+  #hud{color:#f59e0b;font-variant-numeric:tabular-nums}
+  .grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:12px}
+  .tile{position:relative;background:#000;border:1px solid #1f2a3a;border-radius:8px;overflow:hidden}
+  .tile .name{position:absolute;left:8px;top:6px;z-index:3;font-size:12px;color:#cbd5e1;background:#0008;padding:1px 6px;border-radius:4px}
+  .tile video{display:block;width:100%;aspect-ratio:16/9;object-fit:cover;background:#000}
+  canvas.src{position:absolute;left:0;bottom:0;width:160px;opacity:.25;pointer-events:none}
+  .overlay{position:absolute;inset:0;z-index:4;display:none;align-items:center;justify-content:center;flex-direction:column;gap:10px;background:#0b0f17e6;text-align:center;padding:20px}
+  .overlay.show{display:flex}
+  .spin{width:44px;height:44px;border:4px solid #1f2a3a;border-top-color:#22c55e;border-radius:50%;animation:rot 1s linear infinite}
+  @keyframes rot{to{transform:rotate(360deg)}}
+  .err{color:#f87171;font-size:18px;font-weight:600}
+  .err small{display:block;color:#94a3b8;font-size:12px;font-weight:400;margin-top:6px}
+</style>
+</head>
+<body>
+<header>
+  <b>VT fixture</b>
+  <span>故障注入时间表：绿屏 4-8s · 画面停住 12-18s · 黑屏 22-26s · 白屏 31-35s(B) · loading 35-39s · 报错 39-44s</span>
+  <span style="color:#64748b">OSD 秒位每 1s 跳一次；"画面停住"阶段整帧不再重绘，OSD 也随之停住</span>
+  <span id="hud">0.0s</span>
+</header>
+
+<div class="grid">
+  <div class="tile" aria-label="InSight_S485PI_0_AA24">
+    <span class="name">InSight_S485PI_0_AA24</span>
+    <video id="v0" muted autoplay playsinline></video>
+    <canvas id="c0" class="src" width="320" height="180"></canvas>
+    <div class="overlay" id="o0"></div>
+  </div>
+  <div class="tile" aria-label="InSight_S485PI_1_0_AA24">
+    <span class="name">InSight_S485PI_1_0_AA24</span>
+    <video id="v1" muted autoplay playsinline></video>
+    <canvas id="c1" class="src" width="320" height="180"></canvas>
+    <div class="overlay" id="o1"></div>
+  </div>
+</div>
+
+<script>
+const W = 320, H = 180;
+const tiles = [0, 1].map((i) => {
+  const canvas = document.getElementById('c' + i);
+  const video = document.getElementById('v' + i);
+  const ctx = canvas.getContext('2d');
+  const stream = canvas.captureStream(25);
+  video.srcObject = stream;
+  video.play().catch(() => {});
+  return { i, canvas, ctx, video, overlay: document.getElementById('o' + i) };
+});
+
+// 时间表：[开始, 结束, 状态]
+const SCHEDULE = [
+  [0, 4, 'normal'],
+  [4, 8, 'green'],
+  [8, 12, 'normal'],
+  [12, 18, 'freeze'],
+  [18, 22, 'normal'],
+  [22, 26, 'black'],
+  [26, 31, 'normal'],
+  [31, 35, 'whiteB'],
+  [35, 39, 'loading'],
+  [39, 44, 'error'],
+  [44, 999, 'normal'],
+];
+
+const state = (t) => (SCHEDULE.find(([a, b]) => t >= a && t < b) || [0, 0, 'normal'])[2];
+
+function scene(target, t, hue) {
+  const { ctx } = target;
+  const g = ctx.createLinearGradient(0, 0, W, H);
+  g.addColorStop(0, `hsl(${hue} 45% 26%)`);
+  g.addColorStop(1, `hsl(${(hue + 60) % 360} 40% 14%)`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, W, H);
+  // 运动的方块，保证相邻帧不同
+  for (let k = 0; k < 6; k++) {
+    const x = ((t * (40 + k * 13) + k * 90) % (W + 60)) - 30;
+    const y = 30 + k * 22 + Math.sin(t * 1.5 + k) * 10;
+    ctx.fillStyle = `hsl(${(hue + k * 40) % 360} 70% ${45 + k * 4}%)`;
+    ctx.fillRect(x, y, 46, 18);
+  }
+}
+
+// 秒级 OSD：真实安防流里它烧在码流上，画面停住时它也停。
+// 这里画在画布上，冻结阶段整帧不重绘 => OSD 自然停住，和真实流行为一致。
+function osd(target, t) {
+  const { ctx, i } = target;
+  const s = Math.floor(t);
+  const p = (n) => String(n).padStart(2, '0');
+  const txt = `CAM-${i} ${p(Math.floor(s / 3600))}:${p(Math.floor(s / 60) % 60)}:${p(s % 60)}`;
+  ctx.fillStyle = '#101418';
+  ctx.fillRect(4, 4, 104, 16);
+  ctx.fillStyle = '#f1f5f9';
+  ctx.font = '11px monospace';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(txt, 8, 16);
+}
+
+function overlay(target, mode) {
+  const o = target.overlay;
+  if (mode === 'loading') {
+    o.className = 'overlay show';
+    o.innerHTML = '<div class="spin"></div><div>Connecting…</div>';
+  } else if (mode === 'error') {
+    o.className = 'overlay show';
+    o.innerHTML = '<div class="err">Connection Timeout (-33)<small>Check the device\'s network. If the problem persists, try again later.</small></div>';
+  } else {
+    o.className = 'overlay';
+    o.innerHTML = '';
+  }
+}
+
+let t0 = performance.now();
+let lastPhase = '';
+function frame(now) {
+  const t = (now - t0) / 1000;
+  const phase = state(t);
+  const hud = document.getElementById('hud');
+  if (hud) hud.textContent = t.toFixed(1) + 's · ' + phase;
+  document.body.dataset.phase = phase;
+
+  for (const tile of tiles) {
+    if (phase === 'freeze' && lastPhase === 'freeze') continue; // 不重绘 = 画面冻结
+    if (phase === 'green') {
+      tile.ctx.fillStyle = '#00a000';
+      tile.ctx.fillRect(0, 0, W, H);
+    } else if (phase === 'black' && tile.i === 0) {
+      tile.ctx.fillStyle = '#000';
+      tile.ctx.fillRect(0, 0, W, H);
+    } else if (phase === 'whiteB' && tile.i === 1) {
+      tile.ctx.fillStyle = '#f2f2f2';
+      tile.ctx.fillRect(0, 0, W, H);
+    } else if (phase === 'loading' || phase === 'error') {
+      scene(tile, t, 200 + tile.i * 30); // 背景继续动，覆盖层负责提示
+    } else {
+      scene(tile, Math.floor(t * 1000) / 1000, 200 + tile.i * 30 + (t % 5));
+    }
+    osd(tile, t);
+  }
+
+  const want = phase === 'loading' || phase === 'error' ? phase : 'normal';
+  if (want !== lastPhase2) {
+    tiles.forEach((tile) => overlay(tile, want));
+    lastPhase2 = want;
+  }
+  lastPhase = phase;
+  requestAnimationFrame(frame);
+}
+let lastPhase2 = '';
+requestAnimationFrame(frame);
+</script>
+</body>
+</html>

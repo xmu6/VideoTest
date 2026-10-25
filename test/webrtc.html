@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>VT WebRTC test — 本地环回</title>
+<style>
+  body{margin:0;background:#0b0f17;color:#cfd8e3;font:13px/1.5 system-ui,"Microsoft YaHei",sans-serif}
+  header{padding:10px 16px;border-bottom:1px solid #1f2a3a}header b{color:#22c55e}#log{color:#f59e0b}
+  .wrap{padding:12px;max-width:900px}video{width:100%;background:#000;border-radius:8px;aspect-ratio:16/9}
+  canvas{display:none}
+</style>
+</head>
+<body>
+<header><b>VT WebRTC test</b> <span id="log">连接中…</span></header>
+<div class="wrap"><video id="v" aria-label="WebRTC loopback" muted autoplay playsinline></video></div>
+<canvas id="c" width="640" height="360"></canvas>
+<script>
+const c = document.getElementById('c');
+const ctx = c.getContext('2d');
+const v = document.getElementById('v');
+const log = document.getElementById('log');
+const say = (m) => (log.textContent = m);
+
+function draw(t) {
+  const g = ctx.createLinearGradient(0, 0, 640, 360);
+  g.addColorStop(0, `hsl(${(t / 20) % 360} 55% 28%)`);
+  g.addColorStop(1, '#0b0f17');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, 640, 360);
+  for (let i = 0; i < 5; i++) {
+    ctx.fillStyle = `hsl(${(t / 10 + i * 60) % 360} 75% 60%)`;
+    ctx.fillRect(((t * (0.08 + i * 0.02)) % 700) - 60, 40 + i * 60, 80, 30);
+  }
+  ctx.fillStyle = '#fff';
+  ctx.font = '20px monospace';
+  ctx.fillText(`WebRTC ${new Date().toISOString().slice(11, 19)}`, 20, 340);
+  requestAnimationFrame(draw);
+}
+requestAnimationFrame(draw);
+
+(async () => {
+  const stream = c.captureStream(30);
+  const pc1 = new RTCPeerConnection();
+  const pc2 = new RTCPeerConnection();
+  pc1.onicecandidate = (e) => e.candidate && pc2.addIceCandidate(e.candidate).catch(() => {});
+  pc2.onicecandidate = (e) => e.candidate && pc1.addIceCandidate(e.candidate).catch(() => {});
+  pc2.ontrack = (e) => {
+    v.srcObject = e.streams[0];
+    v.play().then(() => say('playing')).catch((err) => say('play 失败: ' + err.message));
+  };
+  stream.getTracks().forEach((tr) => pc1.addTrack(tr, stream));
+  const offer = await pc1.createOffer();
+  await pc1.setLocalDescription(offer);
+  await pc2.setRemoteDescription(offer);
+  const answer = await pc2.createAnswer();
+  await pc2.setLocalDescription(answer);
+  await pc1.setRemoteDescription(answer);
+  pc2.onconnectionstatechange = () => say('pc2: ' + pc2.connectionState);
+})();
+</script>
+</body>
+</html>

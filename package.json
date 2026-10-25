@@ -1,0 +1,20 @@
+{
+  "name": "video-playback-qa",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "浏览器视频播放异常检测：白屏/黑屏/绿屏/蓝屏/冻结/卡顿/报错/loading",
+  "bin": {
+    "vpqa": "./src/monitor.mjs"
+  },
+  "scripts": {
+    "selftest": "node test/selftest.mjs 50",
+    "attach-test": "node test/attach-test.mjs",
+    "hls-test": "node test/hls-test.mjs 30",
+    "rtc-test": "node test/rtc-test.mjs 20"
+  },
+  "dependencies": {
+    "hls.js": "^1.5.17",
+    "playwright-core": "^1.49.0"
+  }
+}
